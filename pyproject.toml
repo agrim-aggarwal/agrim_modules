@@ -1,16 +1,16 @@
 [project]
 name = "agrim-modules"
 version = "0.1.0"
-description = ""
+description = "Custom Python modules for Data Science, Analytics and Engineering projects"
 authors = [
-    {name = "Agrim Aggarwal"}
+    {name = "Agrim Aggarwal", email = "agrim747@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pandas (>=3.0.1,<4.0.0)",
-    "numpy (>=2.4.3,<3.0.0)",
-    "xlsxwriter (>=3.2.9,<4.0.0)"
+    "pandas>=3.0.1,<4.0.0",
+    "numpy>=2.4.3,<3.0.0",
+    "xlsxwriter>=3.2.9,<4.0.0"
 ]
 
 
