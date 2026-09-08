@@ -99,7 +99,29 @@ def get_unrepeated_header_row(header_row, startrow, startcol):
     return (header_final, merge_ranges)
 
 
-def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]):
+def create_sheet(df: pd.DataFrame | list[pd.DataFrame], writer, sheet_name, **kwargs):
+    if isinstance(df, pd.DataFrame):
+        return create_sheet_single(df, writer, sheet_name, **kwargs)
+    elif isinstance(df, list):
+        if not df:
+            return 1
+
+        kwargs = kwargs.copy()
+        current_startrow = kwargs.pop("startrow", 0)
+
+        for df_i in df:
+            if not isinstance(df_i, pd.DataFrame):
+                raise TypeError("All items in the list passed to create_sheet must be pandas DataFrames.")
+
+            table_kwargs = kwargs.copy()
+            table_kwargs["startrow"] = current_startrow
+            create_sheet_single(df_i, writer, sheet_name, **table_kwargs)
+            current_startrow += df_i.shape[0] + 4
+        return 1
+
+    raise TypeError("create_sheet expects a pandas DataFrame or a list of pandas DataFrames.")
+
+def create_sheet_single(df, writer, sheet_name, duplicate_header=False, hide_columns=[], startrow=0):
     """
     Create a professionally formatted Excel sheet from a pandas DataFrame.
 
@@ -112,6 +134,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
     - No gridlines for cleaner appearance
     - Centered and bolded header rows
     - Optional hidden columns in the final worksheet
+    - Optional support for starting the exported table at a custom row
 
     Args:
         df (pandas.DataFrame): The DataFrame to export
@@ -121,6 +144,8 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
                                           below multi-level headers. Defaults to False.
         hide_columns (list, optional): A list of column labels to hide in the
                                       final Excel sheet. Defaults to [].
+        startrow (int, optional): Starting row index for the DataFrame export.
+                                 Defaults to 0.
 
     Returns:
         int: Returns 1 on success
@@ -129,7 +154,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
         >>> import pandas as pd
         >>> df = pd.DataFrame({'A': [1, 2], 'B': [3, 4]})
         >>> with pd.ExcelWriter('output.xlsx', engine='xlsxwriter') as writer:
-        ...     create_sheet(df, writer, 'Sheet1', hide_columns=['B'])
+        ...     create_sheet(df, writer, 'Sheet1', hide_columns=['B'], startrow=5)
 
     Note:
         - For single-level columns: writes DataFrame directly with minimal formatting
@@ -139,6 +164,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
     """
     if hide_columns is None:
         hide_columns = []
+    startrow = int(startrow)
 
     # Create a copy to avoid modifying the original DataFrame
     b = df.copy()
@@ -178,7 +204,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
     # -------------------------------------------------------------------------
     # These will be used later to set up auto-filter functionality
     merge_ranges_all = []
-    autofilter_row_start = col_nlevels - 1  # Last header row
+    autofilter_row_start = startrow + col_nlevels - 1  # Last header row
     autofilter_row_end = autofilter_row_start + b.shape[0]  # Last data row
     autofilter_col_end = b.shape[1] + idx_nlevels - 1  # Last column including index
 
@@ -195,14 +221,19 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
         # Just write the DataFrame directly
         if idx_nlevels == 0:
             # No index to write
-            b.to_excel(writer, sheet_name=sheet_name, index=False)
+            b.to_excel(writer, sheet_name=sheet_name, index=False, startrow=startrow)
         else:
             # Include index as regular column(s)
-            b.reset_index().to_excel(writer, sheet_name=sheet_name, index=False)
+            b.reset_index().to_excel(
+                writer,
+                sheet_name=sheet_name,
+                index=False,
+                startrow=startrow
+            )
     else:
         # Complex case: multi-level columns
         # Need to write each header level separately and handle merging
-        startrow = 0
+        header_start_row = startrow
 
         # Write each level of the column hierarchy
         for col_level_i in range(col_nlevels):
@@ -211,7 +242,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
 
             # Process header row to identify merge ranges
             header_row, merge_ranges = get_unrepeated_header_row(
-                header_row, startrow, idx_nlevels
+                header_row, header_start_row + col_level_i, idx_nlevels
             )
 
             # Accumulate all merge ranges
@@ -223,19 +254,19 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
             write_df.to_excel(
                 writer,
                 sheet_name=sheet_name,
-                startrow=startrow,
+                startrow=header_start_row + col_level_i,
                 index=False,
                 startcol=idx_nlevels
             )
 
-            startrow += 1
+        last_header_row = header_start_row + col_nlevels - 1
 
         # Write index names in the last header row if they exist
         if idx_nlevels > 0:
             pd.DataFrame(columns=idx_names).to_excel(
                 writer,
                 sheet_name=sheet_name,
-                startrow=startrow - 1,
+                startrow=last_header_row,
                 index=False
             )
 
@@ -247,6 +278,8 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
         if idx_nlevels > 0:
             b = b.reset_index()
 
+        data_start_row = header_start_row + col_nlevels
+
         # Write the actual data
         if duplicate_header:
             # Include the flattened column names as an additional header row
@@ -254,7 +287,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
             b.to_excel(
                 writer,
                 sheet_name=sheet_name,
-                startrow=startrow,
+                startrow=data_start_row,
                 index=False
             )
         else:
@@ -262,7 +295,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
             b.to_excel(
                 writer,
                 sheet_name=sheet_name,
-                startrow=startrow,
+                startrow=data_start_row,
                 index=False,
                 header=False
             )
@@ -285,7 +318,8 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
 
     # Freeze panes at the intersection of headers and index
     # This keeps headers and index visible when scrolling
-    worksheet.freeze_panes(col_nlevels, idx_nlevels)
+    if startrow == 0:
+        worksheet.freeze_panes(col_nlevels, idx_nlevels)
 
     # Remove gridlines for a cleaner appearance
     # 2 = hide both screen and print gridlines
@@ -324,7 +358,9 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
     # comma_format = workbook.add_format({'num_format': '#,##0'})
 
     # Apply centered format to all header rows
-    for rownum in range(autofilter_row_end - b.shape[0] + 1):
+    row_start = startrow
+    row_end = row_start + (autofilter_row_end - b.shape[0] + 1)
+    for rownum in range(row_start, row_end):
         worksheet.set_row(rownum, None, center)
 
     # Example of how to apply number formats to specific columns:
@@ -345,7 +381,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]
     # This applies to the entire data range including headers, index, and data
     # Using a formula that always evaluates to TRUE ensures all cells get borders
     worksheet.conditional_format(
-        0, 0,
+        startrow, 0,
         autofilter_row_end, autofilter_col_end,
         {
             'type': 'formula',

@@ -236,6 +236,25 @@ def test_hide_columns(writer):
     print("  ✓ Created sheet with hidden columns")
 
 
+def test_multiple_dataframes_on_one_sheet(writer):
+    """
+    Test: When a list of DataFrames is passed, each table is written below the previous one.
+    """
+    print("Running Multi-Table Sheet Test...")
+
+    df1 = pd.DataFrame({
+        'Product': ['A', 'B'],
+        'Units': [10, 20]
+    })
+    df2 = pd.DataFrame({
+        'Region': ['North', 'South'],
+        'Revenue': [100, 200]
+    })
+
+    create_sheet([df1, df2], writer, '19_Multiple_Tables', startrow=0)
+    print("  ✓ Created sheet with multiple tables")
+
+
 def test_single_column_groupby(writer):
     """
     Test Case 9: Simple groupby with single column output
@@ -485,6 +504,7 @@ def run_all_tests():
         test_duplicate_header_mode(writer)
         test_groupby_aggregation(writer)
         test_hide_columns(writer)
+        test_multiple_dataframes_on_one_sheet(writer)
         test_single_column_groupby(writer)
         test_datetime_data(writer)
         test_wide_pivot_table(writer)

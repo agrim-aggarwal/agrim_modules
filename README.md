@@ -114,10 +114,9 @@ from agrim_modules import create_sheet
 df1 = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
 df2 = pd.DataFrame({'X': [7, 8, 9], 'Y': [10, 11, 12]})
 
-# Write multiple sheets to one Excel file
+# Write multiple tables onto the same sheet, one below the other
 with pd.ExcelWriter('multi_sheet.xlsx', engine='xlsxwriter') as writer:
-    create_sheet(df1, writer, 'First Sheet')
-    create_sheet(df2, writer, 'Second Sheet')
+    create_sheet([df1, df2], writer, 'Both Tables')
 ```
 
 ### Example: Hide selected columns in the exported sheet
@@ -139,13 +138,13 @@ with pd.ExcelWriter('hidden_columns.xlsx', engine='xlsxwriter') as writer:
 
 ## API Reference
 
-### `create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[])`
+### `create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[], startrow=0)`
 
-Creates a formatted Excel sheet from a pandas DataFrame.
+Creates a formatted Excel sheet from a pandas DataFrame or a list of DataFrames.
 
 #### Parameters
 
-- **`df`** (`pandas.DataFrame`): The DataFrame to export
+- **`df`** (`pandas.DataFrame` or `list[pandas.DataFrame]`): The DataFrame or list of DataFrames to export
 - **`writer`** (`pandas.ExcelWriter`): An ExcelWriter object with engine='xlsxwriter'
 - **`sheet_name`** (`str`): Name for the Excel sheet
 - **`duplicate_header`** (`bool`, optional):
@@ -156,6 +155,10 @@ Creates a formatted Excel sheet from a pandas DataFrame.
   - Default: `[]`
   - When provided with a non-empty list, hides those columns in the generated Excel sheet
   - Accepts column labels such as `['Age', 'Department']`
+- **`startrow`** (`int`, optional):
+  - Default: `0`
+  - Starts writing the exported table at the specified Excel row index
+  - When a list of DataFrames is passed, each table is written one after the other with a small vertical gap
 
 #### Returns
 
