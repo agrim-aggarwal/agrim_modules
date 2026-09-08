@@ -120,9 +120,26 @@ with pd.ExcelWriter('multi_sheet.xlsx', engine='xlsxwriter') as writer:
     create_sheet(df2, writer, 'Second Sheet')
 ```
 
+### Example: Hide selected columns in the exported sheet
+
+```python
+import pandas as pd
+from agrim_modules import create_sheet
+
+df = pd.DataFrame({
+    'Name': ['Alice', 'Bob'],
+    'Age': [25, 30],
+    'Salary': [50000, 60000],
+    'Department': ['Engineering', 'Marketing']
+})
+
+with pd.ExcelWriter('hidden_columns.xlsx', engine='xlsxwriter') as writer:
+    create_sheet(df, writer, 'Employees', hide_columns=['Age', 'Department'])
+```
+
 ## API Reference
 
-### `create_sheet(df, writer, sheet_name, duplicate_header=False)`
+### `create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[])`
 
 Creates a formatted Excel sheet from a pandas DataFrame.
 
@@ -135,6 +152,10 @@ Creates a formatted Excel sheet from a pandas DataFrame.
   - Default: `False`
   - When `True`, writes the flattened column names below multi-level headers
   - Useful when you want to see both the hierarchical structure and the full column names
+- **`hide_columns`** (`list`, optional):
+  - Default: `[]`
+  - When provided with a non-empty list, hides those columns in the generated Excel sheet
+  - Accepts column labels such as `['Age', 'Department']`
 
 #### Returns
 

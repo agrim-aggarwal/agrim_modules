@@ -99,7 +99,7 @@ def get_unrepeated_header_row(header_row, startrow, startcol):
     return (header_final, merge_ranges)
 
 
-def create_sheet(df, writer, sheet_name, duplicate_header=False):
+def create_sheet(df, writer, sheet_name, duplicate_header=False, hide_columns=[]):
     """
     Create a professionally formatted Excel sheet from a pandas DataFrame.
 
@@ -111,6 +111,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False):
     - Cell borders on all data
     - No gridlines for cleaner appearance
     - Centered and bolded header rows
+    - Optional hidden columns in the final worksheet
 
     Args:
         df (pandas.DataFrame): The DataFrame to export
@@ -118,6 +119,8 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False):
         sheet_name (str): Name for the Excel sheet
         duplicate_header (bool, optional): If True, writes flattened column names
                                           below multi-level headers. Defaults to False.
+        hide_columns (list, optional): A list of column labels to hide in the
+                                      final Excel sheet. Defaults to [].
 
     Returns:
         int: Returns 1 on success
@@ -126,7 +129,7 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False):
         >>> import pandas as pd
         >>> df = pd.DataFrame({'A': [1, 2], 'B': [3, 4]})
         >>> with pd.ExcelWriter('output.xlsx', engine='xlsxwriter') as writer:
-        ...     create_sheet(df, writer, 'Sheet1')
+        ...     create_sheet(df, writer, 'Sheet1', hide_columns=['B'])
 
     Note:
         - For single-level columns: writes DataFrame directly with minimal formatting
@@ -134,8 +137,19 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False):
         - Index handling: preserves and formats both single and multi-level indexes
         - Auto-filter is applied to the last header row covering all data columns
     """
+    if hide_columns is None:
+        hide_columns = []
+
     # Create a copy to avoid modifying the original DataFrame
     b = df.copy()
+
+    hidden_col_positions = []
+    if hide_columns:
+        for position, col_name in enumerate(b.columns):
+            for hidden_name in hide_columns:
+                if col_name == hidden_name or str(col_name) == str(hidden_name):
+                    hidden_col_positions.append(position)
+                    break
 
     # -------------------------------------------------------------------------
     # Determine index structure
@@ -257,6 +271,17 @@ def create_sheet(df, writer, sheet_name, duplicate_header=False):
     # Apply worksheet-level formatting
     # -------------------------------------------------------------------------
     worksheet = writer.sheets[sheet_name]
+
+    # Hide selected columns if requested
+    if hidden_col_positions:
+        for col_position in sorted(set(hidden_col_positions)):
+            worksheet.set_column(
+                idx_nlevels + col_position,
+                idx_nlevels + col_position,
+                None,
+                None,
+                {'hidden': True}
+            )
 
     # Freeze panes at the intersection of headers and index
     # This keeps headers and index visible when scrolling

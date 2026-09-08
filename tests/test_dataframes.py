@@ -219,6 +219,23 @@ def test_groupby_aggregation(writer):
     print("  ✓ Created grouped aggregation")
 
 
+def test_hide_columns(writer):
+    """
+    Test: Hidden columns are omitted from view while still present in the exported data.
+    """
+    print("Running Hide Columns Test...")
+
+    df = pd.DataFrame({
+        'Name': ['Alice', 'Bob'],
+        'Age': [25, 30],
+        'City': ['Paris', 'Berlin'],
+        'Salary': [50000, 70000]
+    })
+
+    create_sheet(df, writer, 'Hidden_Columns', hide_columns=['Age', 'City'])
+    print("  ✓ Created sheet with hidden columns")
+
+
 def test_single_column_groupby(writer):
     """
     Test Case 9: Simple groupby with single column output
@@ -467,6 +484,7 @@ def run_all_tests():
         test_complex_pivot_multi_column(writer)
         test_duplicate_header_mode(writer)
         test_groupby_aggregation(writer)
+        test_hide_columns(writer)
         test_single_column_groupby(writer)
         test_datetime_data(writer)
         test_wide_pivot_table(writer)
