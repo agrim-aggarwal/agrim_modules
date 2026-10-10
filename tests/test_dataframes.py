@@ -481,6 +481,82 @@ def test_large_numbers(writer):
     print("  ✓ Created large numbers table")
 
 
+def test_small_numbers(writer):
+    """
+    Test Case 21: Columns with very small decimal values
+
+    Exercises the leading-zeros branch of the decimal-place logic:
+      - Daily_Rate  [~0.001–0.007]: 2 leading zeros → p75(zeros)=2 → 4 dp
+      - Monthly_Rate [~0.01–0.07]:  1 leading zero  → p75(zeros)=1 → 3 dp
+      - Annual_Rate  [~0.1–0.7]:    0 leading zeros → p75(zeros)=0 → 2 dp
+    """
+    print("Running Test 21: Small Numbers...")
+
+    df = pd.DataFrame({
+        'Instrument':   ['T-Bill 3M', 'T-Bill 6M', 'T-Note 2Y', 'T-Note 5Y'],
+        'Daily_Rate':   [0.00124, 0.00356, 0.00512, 0.00748],
+        'Monthly_Rate': [0.01240, 0.03560, 0.05120, 0.07480],
+        'Annual_Rate':  [0.12400, 0.35600, 0.51200, 0.74800],
+    })
+    df = df.set_index('Instrument')
+
+    create_sheet(df, writer, '21_Small_Numbers')
+    print("  ✓ Created small-numbers table")
+
+
+def test_mixed_scale_numbers(writer):
+    """
+    Test Case 22: Columns spanning very different numeric scales
+
+    Each column exercises a different branch of the decimal-place logic:
+      - AUM_MM      [whole, >1000]:     p75 > 1000 → 0 dp
+      - Annual_Ret  [mid, 3–12]:        p75 ~9.9   > 1 → 2 dp
+      - Daily_Ret   [tiny, ~0.001]:     p75 ~0.006 < 1, zeros=2 → 4 dp
+      - Mixed_Ret   [mix 0.015–0.9]:    p75 ~0.825 < 1, zeros p75=1 → 3 dp
+    """
+    print("Running Test 22: Mixed Scale Numbers...")
+
+    df = pd.DataFrame({
+        'Asset':      ['Equity', 'Bond', 'Commodity', 'Currency'],
+        'AUM_MM':     [5_234,    12_457,  3_678,       8_901   ],
+        'Annual_Ret': [8.5,       3.2,    12.1,         5.6    ],
+        'Daily_Ret':  [0.0025,  -0.0012,  0.0078,      -0.0034 ],
+        'Mixed_Ret':  [0.015,    0.025,   0.8,           0.9   ],
+    })
+    df = df.set_index('Asset')
+
+    create_sheet(df, writer, '22_Mixed_Scale_Numbers')
+    print("  ✓ Created mixed-scale numbers table")
+
+
+def test_percentage_columns(writer):
+    """
+    Test Case 20: DataFrame with percentage-type columns
+
+    Scenario: Sales performance table mixing regular numeric columns with
+              percentage columns identified by column name keywords
+              ('%', 'pct', 'perc').
+    Expected: Percentage columns formatted with '%' suffix and appropriate
+              decimal places; numeric columns formatted with comma style.
+    """
+    print("Running Test 20: Percentage Columns...")
+
+    df = pd.DataFrame({
+        'Region': ['North', 'South', 'East', 'West'],
+        'Revenue': [1_250_000, 875_000, 2_100_000, 640_000],
+        'Units_Sold': [12_500, 8_750, 21_000, 6_400],
+        'Growth %': [12.5, 8.3, 22.1, 5.7],
+        'Margin_pct': [31.2, 28.5, 35.0, 24.8],
+        'Return_perc': [0.085, 0.062, 0.118, 0.041],
+        'Avg_Order_Value': [100.0, 100.0, 100.0, 100.0],
+    })
+
+    df = df.set_index('Region')
+
+    create_sheet(df, writer, '20_Percentage_Columns')
+    print("  ✓ Created percentage columns table")
+
+
 def run_all_tests():
     """
     Main test runner that executes all test cases and generates output Excel file.
@@ -515,12 +591,15 @@ def run_all_tests():
         test_single_row_dataframe(writer)
         test_single_column_dataframe(writer)
         test_large_numbers(writer)
+        test_small_numbers(writer)
+        test_mixed_scale_numbers(writer)
+        test_percentage_columns(writer)
 
     print()
     print("=" * 70)
     print(f"✓ All tests completed successfully!")
     print(f"✓ Output saved to: {output_file}")
-    print(f"✓ Total test cases: 18")
+    print(f"✓ Total test cases: 21")
     print("=" * 70)
     print()
     print("Open the Excel file to review all test case outputs.")

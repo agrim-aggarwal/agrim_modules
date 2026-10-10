@@ -6,8 +6,52 @@ with special handling for multi-level column headers and indexes, automatic
 cell merging, borders, and professional formatting.
 """
 
+import datetime
+import numpy as np
 import pandas as pd
 from xlsxwriter.utility import xl_rowcol_to_cell
+
+
+def _is_numeric_col(series):
+    for val in series:
+        if pd.isna(val):
+            continue
+        if isinstance(val, float) and np.isinf(val):
+            continue
+        if not isinstance(val, (int, float, np.integer, np.floating)):
+            return False
+    return True
+
+
+def _get_decimal_places(series):
+    numeric = pd.to_numeric(series, errors='coerce')
+    finite = numeric.dropna()
+    finite = finite[np.isfinite(finite)]
+    if len(finite) == 0:
+        return 0
+    abs_vals = finite.abs()
+    is_whole = ((finite % 1) == 0).all()
+    p75 = abs_vals.quantile(0.75)
+    if is_whole or p75 > 1000:
+        return 0
+    elif p75 > 1:
+        return 2
+    else:
+        def _leading_zeros(v):
+            v = abs(float(v))
+            if v == 0 or v >= 0.1:
+                return 0
+            n = 0
+            while v < 0.1:
+                v *= 10
+                n += 1
+            return n
+        return int(finite.apply(_leading_zeros).quantile(0.75)) + 2
+
+
+def _is_pct_col_name(col_name):
+    s = str(col_name)
+    return '%' in s or any(p in s.lower() for p in ['perc', 'pct'])
 
 
 def convert_merge_index_to_range(ranges):
@@ -200,6 +244,26 @@ def create_sheet_single(df, writer, sheet_name, duplicate_header=False, hide_col
     col_values = b.columns.values
 
     # -------------------------------------------------------------------------
+    # Analyze each data column for numeric/percentage formatting
+    # -------------------------------------------------------------------------
+    col_format_info = []
+    for i in range(len(b.columns)):
+        col = b.columns[i]
+        series = b.iloc[:, i]
+        col_name = '.'.join(str(c) for c in col) if isinstance(col, tuple) else col
+        is_num = _is_numeric_col(series)
+        is_pct = is_num and _is_pct_col_name(str(col_name))
+        dec = _get_decimal_places(series) if is_num else 0
+        dec_str = '.' + '0' * dec if dec > 0 else ''
+        num_fmt = f'#,##0{dec_str}"%"' if is_pct else (f'#,##0{dec_str}' if is_num else None)
+        col_format_info.append({
+            'is_numeric': is_num,
+            'is_pct': is_pct,
+            'decimal_places': dec,
+            'num_format': num_fmt,
+        })
+
+    # -------------------------------------------------------------------------
     # Calculate auto-filter range
     # -------------------------------------------------------------------------
     # These will be used later to set up auto-filter functionality
@@ -217,39 +281,21 @@ def create_sheet_single(df, writer, sheet_name, duplicate_header=False, hide_col
     # Write DataFrame based on column level complexity
     # -------------------------------------------------------------------------
     if col_nlevels == 1:
-        # Simple case: single-level columns
-        # Just write the DataFrame directly
-        if idx_nlevels == 0:
-            # No index to write
-            b.to_excel(writer, sheet_name=sheet_name, index=False, startrow=startrow)
-        else:
-            # Include index as regular column(s)
-            b.reset_index().to_excel(
-                writer,
-                sheet_name=sheet_name,
-                index=False,
-                startrow=startrow
-            )
+        # Simple case: write header-only empty DataFrame to create the worksheet
+        write_b = b.reset_index() if idx_nlevels > 0 else b
+        pd.DataFrame(columns=write_b.columns).to_excel(
+            writer, sheet_name=sheet_name, index=False, startrow=startrow
+        )
     else:
         # Complex case: multi-level columns
-        # Need to write each header level separately and handle merging
         header_start_row = startrow
 
-        # Write each level of the column hierarchy
         for col_level_i in range(col_nlevels):
-            # Get values for this level of the column hierarchy
             header_row = b.columns.get_level_values(col_level_i).tolist()
-
-            # Process header row to identify merge ranges
             header_row, merge_ranges = get_unrepeated_header_row(
                 header_row, header_start_row + col_level_i, idx_nlevels
             )
-
-            # Accumulate all merge ranges
             merge_ranges_all += merge_ranges
-
-            # Write this header row
-            # Use empty DataFrame with these columns to write just the header
             write_df = pd.DataFrame(columns=header_row)
             write_df.to_excel(
                 writer,
@@ -261,7 +307,6 @@ def create_sheet_single(df, writer, sheet_name, duplicate_header=False, hide_col
 
         last_header_row = header_start_row + col_nlevels - 1
 
-        # Write index names in the last header row if they exist
         if idx_nlevels > 0:
             pd.DataFrame(columns=idx_names).to_excel(
                 writer,
@@ -270,51 +315,99 @@ def create_sheet_single(df, writer, sheet_name, duplicate_header=False, hide_col
                 index=False
             )
 
-        # Flatten column names for data section
-        # Join multi-level column tuples with '.' and remove trailing/leading dots
+        # Flatten column names and reset index
         b.columns = ['.'.join(str(x) for x in col).strip('.') for col in col_values]
-
-        # Reset index to include it as regular columns
         if idx_nlevels > 0:
             b = b.reset_index()
 
+        write_b = b
         data_start_row = header_start_row + col_nlevels
 
-        # Write the actual data
-        if duplicate_header:
-            # Include the flattened column names as an additional header row
-            autofilter_row_end += 1
-            b.to_excel(
-                writer,
-                sheet_name=sheet_name,
-                startrow=data_start_row,
-                index=False
-            )
+    # -------------------------------------------------------------------------
+    # Get worksheet (created by the header writes above)
+    # -------------------------------------------------------------------------
+    worksheet = writer.sheets[sheet_name]
+
+    # Build xlsxwriter format objects for each data column
+    col_xlsxfmts = []
+    for info in col_format_info:
+        if info['is_numeric']:
+            col_xlsxfmts.append(workbook.add_format({'num_format': info['num_format']}))
         else:
-            # Don't repeat column names (they're already in the multi-level headers)
-            b.to_excel(
-                writer,
-                sheet_name=sheet_name,
-                startrow=data_start_row,
-                index=False,
-                header=False
-            )
+            col_xlsxfmts.append(None)
+
+    # Default format for datetime values (mirrors pandas to_excel behaviour)
+    default_date_fmt = workbook.add_format({'num_format': 'yyyy-mm-dd hh:mm:ss'})
+
+    # Determine where data rows begin
+    data_row_start = startrow + 1 if col_nlevels == 1 else data_start_row
+
+    # For multi-level with duplicate_header: write flattened column names as extra row
+    if col_nlevels > 1 and duplicate_header:
+        for col_j, col_name in enumerate(write_b.columns):
+            worksheet.write(data_row_start, col_j, str(col_name))
+        data_row_start += 1
+        autofilter_row_end += 1
+
+    # Write data rows manually with column-specific number formats
+    for row_i in range(len(write_b)):
+        for col_j in range(write_b.shape[1]):
+            val = write_b.iat[row_i, col_j]
+            excel_row = data_row_start + row_i
+            data_col_idx = col_j - idx_nlevels
+            fmt = col_xlsxfmts[data_col_idx] if data_col_idx >= 0 else None
+            if pd.isna(val):
+                worksheet.write_blank(excel_row, col_j, None, fmt)
+            elif isinstance(val, datetime.datetime) and fmt is None:
+                # Apply a date format so Excel/openpyxl recognises the cell as a date
+                worksheet.write(excel_row, col_j, val, default_date_fmt)
+            else:
+                worksheet.write(excel_row, col_j, val, fmt)
 
     # -------------------------------------------------------------------------
     # Apply worksheet-level formatting
     # -------------------------------------------------------------------------
-    worksheet = writer.sheets[sheet_name]
 
-    # Hide selected columns if requested
-    if hidden_col_positions:
-        for col_position in sorted(set(hidden_col_positions)):
-            worksheet.set_column(
-                idx_nlevels + col_position,
-                idx_nlevels + col_position,
-                None,
-                None,
-                {'hidden': True}
-            )
+    # -------------------------------------------------------------------------
+    # Set column widths, number formats, and hidden status
+    # -------------------------------------------------------------------------
+    # Build header display strings for width computation (leaf level for multi-level)
+    col_headers_for_width = []
+    for j in range(idx_nlevels):
+        name = idx_names[j]
+        col_headers_for_width.append(str(name) if name is not None else '')
+    for col in col_values:
+        if isinstance(col, tuple):
+            col_headers_for_width.append(str(col[-1]))
+        else:
+            col_headers_for_width.append(str(col))
+
+    for col_j in range(write_b.shape[1]):
+        header_len = len(col_headers_for_width[col_j])
+        col_data = write_b.iloc[:, col_j]
+        data_col_idx = col_j - idx_nlevels
+        info = col_format_info[data_col_idx] if data_col_idx >= 0 else None
+        fmt_obj = col_xlsxfmts[data_col_idx] if (info is not None and info['is_numeric']) else None
+
+        max_data_len = 0
+        for val in col_data:
+            if pd.isna(val):
+                continue
+            if info and info['is_numeric']:
+                try:
+                    s = f"{float(val):,.{info['decimal_places']}f}"
+                    if info['is_pct']:
+                        s += '%'
+                    max_data_len = max(max_data_len, len(s))
+                except (TypeError, ValueError):
+                    max_data_len = max(max_data_len, len(str(val)))
+            else:
+                max_data_len = max(max_data_len, len(str(val)))
+
+        col_width = max(5, min(35, 5 + max(header_len, max_data_len)))
+        is_hidden = (data_col_idx in hidden_col_positions) if data_col_idx >= 0 else False
+        options = {'hidden': True} if is_hidden else {}
+        worksheet.set_column(col_j, col_j, col_width, fmt_obj, options)
 
     # Freeze panes at the intersection of headers and index
     # This keeps headers and index visible when scrolling
